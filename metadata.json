@@ -1,0 +1,8 @@
+{
+  "name": "RaveTok – The Old Skool Network",
+  "description": "A dark neon-themed social network for old skool rave culture lovers, featuring vertical video feeds, library management, and marketplace integration.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
