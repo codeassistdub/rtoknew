@@ -31,6 +31,16 @@ export type PostSource = "upload" | "library" | "live" | "youtube" | "marketplac
 export type RaveCategory = "90s" | "mixes" | "year" | "vinyl" | "global" | "jungle" | "hardcore" | "techno" | "events";
 export type MarketCategory = "Vinyl" | "Decks" | "Tape Packs" | "Studio Gear";
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'offer' | 'event' | 'system';
+  timestamp: string;
+  read: boolean;
+  link?: string;
+}
+
 export interface Offer {
   id: string;
   postId: string;
@@ -91,6 +101,9 @@ export interface Post {
     youtube?: string;
     spotify?: string;
     discogs?: string;
+    instagram?: string;
+    facebook?: string;
+    website?: string;
   };
   vinyl?: {
     condition: string;

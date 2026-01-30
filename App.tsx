@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { User, Post, LibraryTrack, Offer, InviteCode, UserRole, Comment } from './types';
+import { User, Post, LibraryTrack, Offer, InviteCode, UserRole, Comment, AppNotification } from './types';
 import { COLORS, MOCK_USER, SEED_POSTS, INITIAL_LIBRARY } from './constants';
 import LandingPage from './components/LandingPage';
 import VideoCard from './components/VideoCard';
@@ -10,6 +10,7 @@ import AdminDashboard from './components/AdminDashboard';
 import ProfileView from './components/ProfileView';
 import EventsView from './components/EventsView';
 import CommentsModal from './components/CommentsModal';
+import NotificationToast from './components/NotificationToast';
 import { 
   Home, 
   PlusSquare, 
@@ -44,6 +45,7 @@ const App: React.FC = () => {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
   const [localLibrary, setLocalLibrary] = useState<LibraryTrack[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   
   // UI State
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
@@ -54,6 +56,7 @@ const App: React.FC = () => {
   const [upgradeCode, setUpgradeCode] = useState('');
   const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +90,11 @@ const App: React.FC = () => {
       setLocalLibrary(INITIAL_LIBRARY);
       localStorage.setItem('ravetok_library', JSON.stringify(INITIAL_LIBRARY));
     }
+
+    // Request Notification Permission
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
   }, []);
 
   // Theme persistence
@@ -119,6 +127,43 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('ravetok_user', JSON.stringify(currentUser));
+    }
+  }, [currentUser]);
+
+  // Notifications Logic
+  const triggerNotification = (title: string, message: string, type: AppNotification['type']) => {
+    const newNotif: AppNotification = {
+      id: `notif-${Date.now()}`,
+      title,
+      message,
+      type,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    setNotifications(prev => [newNotif, ...prev]);
+    setActiveNotification(newNotif);
+
+    // Browser Push
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(`RaveTok: ${title}`, { body: message, icon: '/favicon.ico' });
+    }
+
+    // Auto-clear toast after 5s
+    setTimeout(() => setActiveNotification(prev => prev?.id === newNotif.id ? null : prev), 5000);
+  };
+
+  // Mock "Upcoming Event" notification after login
+  useEffect(() => {
+    if (currentUser) {
+      const timer = setTimeout(() => {
+        triggerNotification(
+          "EVENT STARTING SOON", 
+          "Helter Skelter '95 Replay starts in 10 minutes!", 
+          "event"
+        );
+      }, 10000);
+      return () => clearTimeout(timer);
     }
   }, [currentUser]);
 
@@ -218,9 +263,7 @@ const App: React.FC = () => {
     let posts = [...cloudPosts];
     
     if (activeTab === 'feed') {
-      // Hide pending events from feed
       posts = posts.filter(p => !(p.metadata.type === 'event' && p.metadata.eventStatus !== 'approved'));
-
       if (activeTimeline === '90s') {
         posts = posts.filter(p => p.year?.includes('90') || p.categories.includes('90s'));
       } else if (activeTimeline === 'jungle') {
@@ -229,7 +272,6 @@ const App: React.FC = () => {
         posts = posts.filter(p => p.metadata.type === 'vinyl' || p.categories.includes('vinyl') || p.source === 'marketplace');
       }
     }
-
     return posts.sort((a, b) => {
       if (a.isLive && !b.isLive) return -1;
       if (!a.isLive && b.isLive) return 1;
@@ -263,6 +305,19 @@ const App: React.FC = () => {
     <div className={`fixed inset-0 flex justify-center select-none transition-colors duration-300 ${theme === 'dark' ? 'bg-black' : 'bg-gray-100'}`}>
       <div className={`relative w-full max-w-md h-full flex flex-col shadow-2xl overflow-hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-black border-x border-white/5' : 'bg-white border-x border-gray-200'}`}>
         
+        {/* Notification Toast */}
+        {activeNotification && (
+          <NotificationToast 
+            notification={activeNotification} 
+            onClose={() => setActiveNotification(null)}
+            onClick={(n) => {
+              if (n.type === 'offer') setActiveTab('profile');
+              if (n.type === 'event') setActiveTab('events');
+              setActiveNotification(null);
+            }}
+          />
+        )}
+
         {/* Main Header */}
         {!viewingProfileId && (
           <header className={`absolute top-0 left-0 w-full z-40 bg-gradient-to-b ${theme === 'dark' ? 'from-black/90 via-black/50 to-transparent' : 'from-white/90 via-white/50 to-transparent'}`}>
@@ -289,7 +344,7 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Top Sub-Nav (Timeline Filters) - Only visible on Feed */}
+            {/* Top Sub-Nav (Timeline Filters) */}
             {activeTab === 'feed' && (
               <div className="flex items-center justify-center gap-2 pb-3 px-4 animate-in slide-in-from-top-2 duration-300">
                 {[
@@ -393,7 +448,11 @@ const App: React.FC = () => {
                 />
               )}
 
-              {activeTab === 'market' && <Marketplace posts={cloudPosts} currentUser={currentUser} offers={offers} onMakeOffer={(off) => setOffers(prev => [{ ...off, id: `offer-${Date.now()}`, fromUserId: currentUser.id, fromUsername: currentUser.username, status: 'pending', timestamp: new Date().toISOString() } as Offer, ...prev])} />}
+              {activeTab === 'market' && <Marketplace posts={cloudPosts} currentUser={currentUser} offers={offers} onMakeOffer={(off) => {
+                setOffers(prev => [{ ...off, id: `offer-${Date.now()}`, fromUserId: currentUser.id, fromUsername: currentUser.username, status: 'pending', timestamp: new Date().toISOString() } as Offer, ...prev]);
+                // Simulating notification for the recipient
+                triggerNotification("NEW OFFER RECEIVED", `User @${currentUser.username} offered £${off.amount} for your item!`, "offer");
+              }} />}
               
               {activeTab === 'events' && (
                 <EventsView 
@@ -429,7 +488,12 @@ const App: React.FC = () => {
                   inviteCodes={inviteCodes} 
                   onAddPost={(p) => { setCloudPosts(prev => [p, ...prev]); setActiveTab('feed'); }} 
                   onDeletePost={(id) => setCloudPosts(prev => prev.filter(p => p.id !== id))} 
-                  onUpdatePost={(post) => setCloudPosts(prev => prev.map(p => p.id === post.id ? post : p))}
+                  onUpdatePost={(post) => {
+                    setCloudPosts(prev => prev.map(p => p.id === post.id ? post : p));
+                    if (post.metadata.type === 'event' && post.metadata.eventStatus === 'approved') {
+                      triggerNotification("EVENT APPROVED", `${post.trackTitle} has been authorized for broadcast.`, "event");
+                    }
+                  }}
                   onGenerateCode={() => {
                     const code = `DJ-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
                     setInviteCodes(prev => [{ code, createdBy: currentUser.id, createdAt: new Date().toISOString() }, ...prev]);
